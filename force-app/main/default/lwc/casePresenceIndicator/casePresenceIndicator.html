@@ -1,0 +1,56 @@
+<template>
+    <template if:true={hasVisibleUsers}>
+        <!-- Desktop View -->
+        <template if:false={isMobile}>
+            <div class="slds-box slds-box_x-small presence-container">
+                <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                    <div class="slds-col">
+                        <span class="slds-text-body_small slds-text-color_weak">Also viewing:</span>
+                    </div>
+                </div>
+                <div class="slds-m-top_x-small slds-grid slds-grid_align-start slds-grid_vertical-align-center">
+                    <template for:each={displayedUsers} for:item="user">
+                        <div key={user.userId} class="avatar-wrapper" title={user.userName}>
+                            <lightning-avatar
+                                src={user.userPhotoUrl}
+                                fallback-icon-name="standard:user"
+                                size="small"
+                                alternative-text={user.userName}
+                                data-userid={user.userId}
+                                onmouseenter={handleAvatarHover}
+                                onmouseleave={handleAvatarLeave}
+                                style={user.style}>
+                            </lightning-avatar>
+                            <!-- Tooltip -->
+                            <div class="custom-tooltip" data-userid={user.userId}>
+                                <div class="slds-popover slds-popover_tooltip slds-nubbin_bottom" role="tooltip">
+                                    <div class="slds-popover__body">
+                                        <strong>{user.userName}</strong><br/>
+                                        <span class="slds-text-color_weak">{user.timeAgo}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <template if:true={showAdditionalCount}>
+                        <div class="slds-m-left_x-small">
+                            <span class="slds-text-body_small slds-text-color_weak">
+                                +{additionalCount} more
+                            </span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+        
+        <!-- Mobile View -->
+        <template if:true={isMobile}>
+            <div class="slds-box slds-box_x-small presence-container-mobile">
+                <div class="slds-text-body_small">
+                    <span class="slds-text-color_weak">Also viewing: </span>
+                    <span>{mobileUserList}</span>
+                </div>
+            </div>
+        </template>
+    </template>
+</template>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Show_Leave_Toasts__c</fullName>
+    <defaultValue>true</defaultValue>
+    <label>Show Leave Toasts</label>
+    <type>Checkbox</type>
+</CustomField>
