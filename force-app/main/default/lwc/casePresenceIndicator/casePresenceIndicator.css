@@ -18,34 +18,145 @@
     display: inline-block;
 }
 
-.custom-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-bottom: 8px;
-    z-index: 9999;
-}
-
-.custom-tooltip .slds-popover {
+.avatar-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
     position: relative;
-    width: auto;
-    min-width: 120px;
 }
 
-/* Hide component when no users */
-:host([hidden]) {
-    display: none;
+.user-badge {
+    position: absolute !important;
+    top: -10px !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 auto !important;
+    width: fit-content !important;
+    font-size: 18px !important;
+    z-index: 10 !important;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+    animation: badgeFloat 2s ease-in-out infinite;
+    pointer-events: none !important;
 }
 
-/* Avatar styling */
-lightning-avatar {
-    cursor: pointer;
-    transition: opacity 0.2s ease;
-}
-
-/* Ensure avatars are circular with proper borders */
-lightning-avatar::part(avatar) {
+.avatar-photo {
     border-radius: 50%;
+    padding: 2px;
+    display: inline-block;
+    position: relative;
+}
+
+.editing-badge {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    background: white;
+    border-radius: 50%;
+    padding: 1px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+}
+
+.editing-badge lightning-icon {
+    --slds-c-icon-color-foreground: #0176d3;
+    --slds-c-icon-size: 8px;
+}
+
+@keyframes badgeFloat {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-2px);
+    }
+}
+
+.user-name-label {
+    font-size: 10px;
+    color: #706e6b;
+    text-align: center;
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.avatar-photo img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+}
+
+/* Active state - 100% opacity, no border */
+.presence-avatar.active {
+    opacity: 1;
+}
+
+.presence-avatar.active .avatar-photo {
+    border: 2px solid transparent;
+}
+
+/* Idle state - 50% opacity, no border */
+.presence-avatar.idle {
+    opacity: 0.5;
+}
+
+.presence-avatar.idle .avatar-photo {
+    border: 2px solid transparent;
+}
+
+/* Drafting state styling (for both active and idle) */
+.presence-avatar.drafting .avatar-photo {
+    border: 2px solid #0176d3;
+}
+
+.user-list-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.user-list-item:last-child {
+    border-bottom: none;
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin-right: 12px;
+    position: relative;
+}
+
+.user-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #080707;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-state {
+    font-size: 11px;
+    color: #706e6b;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.state-icon {
+    font-size: 10px;
 }

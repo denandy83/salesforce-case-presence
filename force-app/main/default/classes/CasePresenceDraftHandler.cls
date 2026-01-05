@@ -1,76 +1,69 @@
 public with sharing class CasePresenceDraftHandler {
     
     /**
-     * Query for recent draft FeedItems on a case
-     * @param caseId The Case ID to check for drafts
-     * @return List of draft FeedItems with creator information
+     * Check if current user has any Chatter drafts
+     * Uses ConnectApi to check user's draft feed
+     * @return True if user has draft(s), false otherwise
      */
     @AuraEnabled(cacheable=false)
-    public static List<DraftInfo> getRecentDrafts(String caseId) {
+    public static Boolean currentUserHasDrafts() {
         try {
-            // Get staleness minutes from custom metadata
-            Integer draftStalenessMinutes = getSettings().Draft_Staleness_Minutes__c.intValue();
-            DateTime cutoffTime = DateTime.now().addMinutes(-draftStalenessMinutes);
+            // Use ConnectApi to get current user's draft feed
+            ConnectApi.FeedElementPage draftFeed = ConnectApi.ChatterFeeds.getFeedElementsFromFeed(
+                null, // Use current user's context
+                ConnectApi.FeedType.Draft,
+                'me' // Current user's drafts
+            );
             
-            List<FeedItem> drafts = [
-                SELECT Id, CreatedById, CreatedBy.Name, CreatedBy.SmallPhotoUrl, CreatedDate
-                FROM FeedItem
-                WHERE ParentId = :caseId
-                AND Status = 'Draft'
-                AND CreatedDate >= :cutoffTime
+            // Return true if user has any drafts
+            return draftFeed != null && 
+                   draftFeed.elements != null && 
+                   !draftFeed.elements.isEmpty();
+                   
+        } catch (Exception e) {
+            // If error (e.g., Chatter not enabled), assume no drafts
+            System.debug('Error checking drafts: ' + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Check if current user has draft emails for a specific case
+     * @param caseId The Case ID to check
+     * @return True if user has draft email(s) for this case
+     */
+    @AuraEnabled(cacheable=false)
+    public static Boolean currentUserHasDraftEmails(String caseId) {
+        try {
+            // Query for draft emails by current user on this case
+            // Status = '5' is Draft status
+            Integer draftCount = [
+                SELECT COUNT()
+                FROM EmailMessage
+                WHERE RelatedToId = :caseId
+                AND Status = '5'
+                AND CreatedById = :UserInfo.getUserId()
+                AND CreatedDate >= :DateTime.now().addMinutes(-10)
                 WITH SECURITY_ENFORCED
-                ORDER BY CreatedDate DESC
             ];
             
-            List<DraftInfo> draftInfos = new List<DraftInfo>();
-            for (FeedItem draft : drafts) {
-                DraftInfo info = new DraftInfo();
-                info.userId = draft.CreatedById;
-                info.userName = draft.CreatedBy.Name;
-                info.userPhotoUrl = draft.CreatedBy.SmallPhotoUrl;
-                info.createdDate = draft.CreatedDate;
-                draftInfos.add(info);
-            }
-            
-            return draftInfos;
+            return draftCount > 0;
             
         } catch (Exception e) {
-            throw new AuraHandledException('Error fetching drafts: ' + e.getMessage());
+            System.debug('Error checking email drafts: ' + e.getMessage());
+            return false;
         }
     }
     
     /**
-     * Get settings from Custom Metadata
+     * Check if current user has ANY drafts (Chatter or Email) for this case
+     * @param caseId The Case ID to check
+     * @return True if user has any drafts
      */
-    private static Case_Presence_Settings__mdt getSettings() {
-        List<Case_Presence_Settings__mdt> settings = [
-            SELECT Heartbeat_Frequency_Seconds__c, 
-                   Presence_Expiration_Minutes__c,
-                   Draft_Staleness_Minutes__c
-            FROM Case_Presence_Settings__mdt
-            WHERE DeveloperName = 'Default'
-            LIMIT 1
-        ];
-        
-        if (settings.isEmpty()) {
-            // Return defaults if no custom metadata found
-            Case_Presence_Settings__mdt defaultSettings = new Case_Presence_Settings__mdt();
-            defaultSettings.Heartbeat_Frequency_Seconds__c = 20;
-            defaultSettings.Presence_Expiration_Minutes__c = 10;
-            defaultSettings.Draft_Staleness_Minutes__c = 5;
-            return defaultSettings;
-        }
-        
-        return settings[0];
-    }
-    
-    /**
-     * Wrapper class for draft information
-     */
-    public class DraftInfo {
-        @AuraEnabled public String userId { get; set; }
-        @AuraEnabled public String userName { get; set; }
-        @AuraEnabled public String userPhotoUrl { get; set; }
-        @AuraEnabled public DateTime createdDate { get; set; }
+    @AuraEnabled(cacheable=false)
+    public static Boolean currentUserHasAnyDrafts(String caseId) {
+        // Only check email drafts
+        // Chatter drafts via ConnectApi are unreliable (cleared too quickly, not case-specific)
+        return currentUserHasDraftEmails(caseId);
     }
 }

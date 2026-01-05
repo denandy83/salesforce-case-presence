@@ -1,564 +1,662 @@
-import { LightningElement, api, wire, track } from 'lwc';
+import { LightningElement, api, track } from 'lwc';
 import { subscribe, unsubscribe, onError } from 'lightning/empApi';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import publishPresence from '@salesforce/apex/CasePresencePublisher.publishPresence';
 import getSettings from '@salesforce/apex/CasePresencePublisher.getSettings';
 import getCurrentUserInfo from '@salesforce/apex/CasePresencePublisher.getCurrentUserInfo';
-import getRecentDrafts from '@salesforce/apex/CasePresenceDraftHandler.getRecentDrafts';
+import getCasePresence from '@salesforce/apex/CasePresenceQuery.getCasePresence';
+import getAllDrafts from '@salesforce/apex/CasePresenceQuery.getAllDrafts';
+import getCaseInfo from '@salesforce/apex/CasePresenceQuery.getCaseInfo';
 
 const CHANNEL_NAME = '/event/Case_Presence__e';
+const DRAFT_CHECK_INTERVAL = 10000; // 10 seconds
+const EXPIRATION_CHECK_INTERVAL = 10000; // 10 seconds
+const PRESENCE_EXPIRATION_MS = 600000; // 10 minutes
 
 export default class CasePresenceIndicator extends LightningElement {
-    @api recordId; // Case ID
-    @track presenceMap = new Map(); // Map of userId+sessionId -> presence data
-    @track visibleUsers = []; // Array of users to display
+    _recordId;
     
-    sessionId = this.generateSessionId();
+    @api 
+    get recordId() {
+        return this._recordId;
+    }
+    set recordId(value) {
+        const oldValue = this._recordId;
+        this._recordId = value;
+        if (oldValue && oldValue !== value) {
+            this.handleRecordIdChange(value, oldValue);
+        }
+    }
+    
+    previousRecordId = null;
+    
+    @track visibleUsers = [];
+    @track caseNumber = '';
+    @track caseSubject = '';
+    
+    sessionId;
     currentUserId;
     currentUserName;
-    settings;
-    heartbeatInterval;
-    draftCheckInterval;
-    visibilityCheckInterval;
+    currentState = null; // Current published state (active/idle/drafting/gone)
+    hasDrafts = false;
     isActive = true;
-    isEditing = false;
-    subscription = null;
-    isComponentActive = true;
-    editModeCheckInterval;
     
-    // Event listener references for cleanup
-    visibilityChangeHandler;
-    focusHandler;
-    blurHandler;
-    beforeUnloadHandler;
+    settings;
+    debugLogging = false;
+    subscription;
+    isComponentActive = false;
     
-    // For mobile detection
-    isMobile = false;
+    // Intervals
+    draftCheckInterval = null;
+    expirationCheckInterval = null;
+    timeAgoInterval = null;
+    visibilityCheckInterval = null;
+    presenceCleanupInterval = null;
     
-    connectedCallback() {
-        this.detectMobile();
-        this.initializeComponent();
-        this.setupVisibilityTracking();
-        this.setupEditModeDetection();
-        this.setupBeforeUnload();
-    }
-    
-    disconnectedCallback() {
-        // Send final heartbeat to notify others we're leaving
-        // This is async and will complete if navigation allows it
-        this.sendGoodbyeHeartbeat();
-        this.cleanup();
-    }
-    
-    sendGoodbyeHeartbeat() {
-        // Best effort goodbye notification
-        // During beforeunload, this may not complete
-        // The 10-minute timeout will clean up as fallback
-        publishPresence({
-            caseId: this.recordId,
-            sessionId: this.sessionId,
-            state: 'gone',
-            isActive: false
-        }).catch(error => {
-            // Silently fail - cleanup timeout will handle it
-            console.debug('Goodbye heartbeat failed (expected during unload)');
-        });
-    }
-    
-    detectMobile() {
-        // Simple mobile detection
-        this.isMobile = window.innerWidth < 768 || 
-                       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    }
-    
-    async initializeComponent() {
+    // Handlers
+    visibilityChangeHandler = null;
+    beforeUnloadHandler = null;
+
+    async connectedCallback() {
+        this.isComponentActive = true;
+        this.sessionId = this.generateSessionId();
+        
         try {
-            // Get settings
+            // Load settings
             this.settings = await getSettings();
+            this.debugLogging = this.settings?.enableDebugLogging || false;
             
             // Get current user info
             const userInfo = await getCurrentUserInfo();
             this.currentUserId = userInfo.userId;
             this.currentUserName = userInfo.userName;
             
+            this.log('🚀 Component initialized', { 
+                recordId: this.recordId,
+                sessionId: this.sessionId,
+                userId: this.currentUserId 
+            });
+            
+            // Load initial presence data
+            if (this.recordId) {
+                await this.loadInitialPresence();
+            }
+            
             // Subscribe to Platform Events
             await this.subscribeToPlatformEvents();
             
-            // Start heartbeat
-            this.startHeartbeat();
+            // Publish initial presence
+            this.isActive = document.visibilityState === 'visible';
+            await this.publishStateChange(this.isActive ? 'active' : 'idle');
             
-            // Start draft checking
-            this.startDraftCheck();
-            
-            // Start presence cleanup
+            // Start periodic tasks
+            if (this.isActive) {
+                this.startDraftChecking();
+            }
+            this.startExpirationFilter();
+            this.startTimeAgoUpdates();
+            this.startVisibilityMonitoring();
             this.startPresenceCleanup();
-            
-            // Send initial heartbeat
-            this.sendHeartbeat();
+            this.setupBeforeUnload();
             
         } catch (error) {
             console.error('Error initializing component:', error);
         }
     }
-    
-    generateSessionId() {
-        return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+    disconnectedCallback() {
+        this.log('👋 Component disconnecting');
+        this.sendGoodbyeHeartbeat();
+        this.cleanup();
     }
-    
+
+    async loadInitialPresence() {
+        if (!this.isComponentActive || !this.recordId) return;
+        
+        try {
+            this.log('📥 Loading initial presence for case:', this.recordId);
+            
+            // Query case info
+            const caseInfo = await getCaseInfo({ caseId: this.recordId });
+            if (!this.isComponentActive) return;
+            
+            if (caseInfo) {
+                this.caseNumber = caseInfo.caseNumber;
+                this.caseSubject = caseInfo.caseSubject;
+                this.log('Case:', this.caseNumber, this.caseSubject);
+            }
+            
+            // Query current presence state
+            const presence = await getCasePresence({ caseId: this.recordId });
+            if (!this.isComponentActive) return;
+            
+            this.log('Found users:', presence.length);
+            
+            // Query all drafts
+            const drafts = await getAllDrafts({ caseId: this.recordId });
+            if (!this.isComponentActive) return;
+            
+            this.log('Found drafts:', drafts.length);
+            
+            // Merge draft data into presence
+            const usersWithDrafts = this.mergeDraftData(presence, drafts);
+            
+            // Display immediately (only if still active)
+            if (this.isComponentActive) {
+                this.visibleUsers = usersWithDrafts;
+                
+                // Check if current user has drafts
+                this.hasDrafts = drafts.some(d => d.userId === this.currentUserId);
+            }
+            
+        } catch (error) {
+            if (this.isComponentActive) {
+                console.error('Error loading initial presence:', error);
+            }
+        }
+    }
+
+    mergeDraftData(presenceUsers, drafts) {
+        const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
+        
+        return presenceUsers.map(user => {
+            const userDrafts = drafts.filter(d => d.userId === user.userId);
+            const draftAge = userDrafts.length > 0 ? Date.now() - new Date(userDrafts[0].createdDate).getTime() : null;
+            
+            // Only show as "has draft" if draft is less than 5 minutes old
+            const hasDraft = userDrafts.length > 0 && draftAge < FIVE_MINUTES;
+            
+            return {
+                ...user,
+                hasDraft: hasDraft,
+                draftAge: draftAge,
+                draftAgeMinutes: draftAge ? Math.floor(draftAge / 60000) : null
+            };
+        });
+    }
+
     async subscribeToPlatformEvents() {
         const messageCallback = (response) => {
-            this.handlePresenceEvent(response.data.payload);
+            const payload = response.data.payload;
+            this.log('📨 Platform Event Received:', {
+                caseId: payload.CaseId__c,
+                userId: payload.UserId__c,
+                userName: payload.UserName__c,
+                state: payload.State__c,
+                sessionId: payload.SessionId__c
+            });
+            
+            this.handlePresenceEvent(payload);
         };
-        
+
         try {
             const response = await subscribe(CHANNEL_NAME, -1, messageCallback);
             this.subscription = response;
-            console.log('Subscribed to Case_Presence__e');
+            this.log('✅ Subscribed to Platform Events');
         } catch (error) {
-            console.error('Error subscribing to platform events:', error);
+            console.error('Error subscribing to Platform Events:', error);
         }
-        
-        // Register error listener
+
         onError(error => {
-            console.error('Platform Event error:', error);
+            console.error('EMP API Error:', error);
         });
     }
-    
+
     handlePresenceEvent(payload) {
-        if (!payload || payload.CaseId__c !== this.recordId) {
+        // Ignore own events (they're handled locally for instant feedback)
+        if (payload.UserId__c === this.currentUserId && payload.SessionId__c === this.sessionId) {
+            this.log('⏭️ Ignoring own event');
             return;
         }
-        
-        const userId = payload.UserId__c;
-        const sessionId = payload.SessionId__c;
-        const key = `${userId}-${sessionId}`;
-        
-        // Ignore events from current session
-        if (sessionId === this.sessionId) {
+
+        // Only process events for current case
+        if (payload.CaseId__c !== this.recordId) {
+            this.log('⏭️ Event for different case');
             return;
         }
-        
-        // Handle "gone" state - user is leaving
+
+        const existingUserIndex = this.visibleUsers.findIndex(
+            u => u.userId === payload.UserId__c && u.sessionId === payload.SessionId__c
+        );
+
         if (payload.State__c === 'gone') {
-            const existingPresence = this.presenceMap.get(key);
-            if (existingPresence) {
-                // Show toast notification
-                this.showGoneToast(userId, existingPresence.userName);
-                // Remove from presence map immediately
-                this.presenceMap.delete(key);
-                this.updateVisibleUsers();
+            // User left
+            if (existingUserIndex !== -1) {
+                const user = this.visibleUsers[existingUserIndex];
+                // Only show toast if this tab is active
+                if (this.isActive && document.visibilityState === 'visible') {
+                    this.showLeaveToast(user.userName);
+                }
+                this.visibleUsers = this.visibleUsers.filter((_, i) => i !== existingUserIndex);
+                this.log('👋 User left:', payload.UserName__c);
             }
-            return;
-        }
-        
-        const existingPresence = this.presenceMap.get(key);
-        const isNewUser = !existingPresence;
-        const wasEditing = existingPresence?.isEditing;
-        
-        // Get or preserve user data
-        let userName = existingPresence?.userName;
-        let userPhotoUrl = existingPresence?.userPhotoUrl;
-        
-        // If new user, we need to fetch their info (will be available on next update)
-        // For now, use the userId as fallback
-        if (!userName) {
-            userName = `User ${userId.substring(0, 8)}`;
-        }
-        
-        // Update presence map
-        this.presenceMap.set(key, {
-            userId: userId,
-            sessionId: sessionId,
-            userName: userName,
-            userPhotoUrl: userPhotoUrl,
-            state: payload.State__c,
-            isActive: payload.IsActive__c,
-            timestamp: new Date(payload.Timestamp__c),
-            isEditing: payload.State__c === 'editing' || payload.State__c === 'drafting'
-        });
-        
-        // Show toast notifications
-        this.showPresenceToast(userId, payload.State__c, isNewUser, wasEditing, userName);
-        
-        // Update visible users
-        this.updateVisibleUsers();
-    }
-    
-    showPresenceToast(userId, state, isNewUser, wasEditing, userName) {
-        // Don't show toasts for current user
-        if (userId === this.currentUserId) {
-            return;
-        }
-        
-        let message = '';
-        
-        // Check individual toast settings
-        if (isNewUser && this.settings.showJoinToasts) {
-            message = `${userName} is now viewing this case`;
-        } else if (state === 'editing' && !wasEditing && this.settings.showEditStartToasts) {
-            message = `${userName} started editing`;
-        } else if (state === 'viewing' && wasEditing && this.settings.showEditStopToasts) {
-            message = `${userName} stopped editing`;
-        }
-        
-        if (message) {
-            this.showCustomToast(message);
-        }
-    }
-    
-    showGoneToast(userId, userName) {
-        // Don't show toasts for current user
-        if (userId === this.currentUserId) {
-            return;
-        }
-        
-        // Check if leave toasts are enabled
-        if (!this.settings.showLeaveToasts) {
-            return;
-        }
-        
-        const message = `${userName || 'Someone'} is no longer viewing this case`;
-        this.showCustomToast(message);
-    }
-    
-    showCustomToast(message) {
-        // Always use pester mode for consistent 3-second auto-dismiss
-        const event = new ShowToastEvent({
-            message: message,
-            variant: 'info',
-            mode: 'pester'
-        });
-        this.dispatchEvent(event);
-    }
-    
-    startHeartbeat() {
-        const frequencyMs = this.settings.heartbeatFrequencySeconds * 1000;
-        this.heartbeatInterval = setInterval(() => {
-            if (this.isComponentActive) {
-                this.sendHeartbeat();
+        } else {
+            // User joined or updated
+            const user = {
+                userId: payload.UserId__c,
+                userName: payload.UserName__c,
+                userPhotoUrl: payload.UserPhotoUrl__c,
+                state: payload.State__c,
+                sessionId: payload.SessionId__c,
+                lastSeen: new Date(payload.Timestamp__c),
+                isActive: payload.IsActive__c,
+                hasDraft: false,
+                draftAge: null
+            };
+
+            if (existingUserIndex !== -1) {
+                // Update existing
+                this.visibleUsers = [
+                    ...this.visibleUsers.slice(0, existingUserIndex),
+                    user,
+                    ...this.visibleUsers.slice(existingUserIndex + 1)
+                ];
+                this.log('🔄 User updated:', payload.UserName__c);
+            } else {
+                // New user - only show toast if this tab is active
+                this.visibleUsers = [...this.visibleUsers, user];
+                if (this.isActive && document.visibilityState === 'visible') {
+                    this.showJoinToast(user.userName);
+                }
+                this.log('👋 User joined:', payload.UserName__c);
             }
-        }, frequencyMs);
+        }
     }
-    
-    async sendHeartbeat() {
+
+    async startDraftChecking() {
+        if (this.draftCheckInterval) {
+            clearInterval(this.draftCheckInterval);
+        }
+
+        // Check immediately
+        await this.checkDrafts();
+
+        // Check every 10 seconds
+        this.draftCheckInterval = setInterval(async () => {
+            if (this.isActive && !this.isDormant && this.recordId) {
+                await this.checkDrafts();
+            }
+        }, DRAFT_CHECK_INTERVAL);
+
+        this.log('✅ Draft checking started');
+    }
+
+    stopDraftChecking() {
+        if (this.draftCheckInterval) {
+            clearInterval(this.draftCheckInterval);
+            this.draftCheckInterval = null;
+            this.log('⏹️ Draft checking stopped');
+        }
+    }
+
+    async checkDrafts() {
+        if (!this.isComponentActive || !this.recordId) return;
+        
         try {
-            const state = this.isEditing ? 'editing' : 'viewing';
+            const drafts = await getAllDrafts({ caseId: this.recordId });
+            
+            // Check if component is still active after async operation
+            if (!this.isComponentActive) return;
+            
+            // Update MY draft status
+            const myDrafts = drafts.filter(d => d.userId === this.currentUserId);
+            const nowHasDrafts = myDrafts.length > 0;
+            
+            if (nowHasDrafts !== this.hasDrafts) {
+                this.hasDrafts = nowHasDrafts;
+                const newState = nowHasDrafts ? 'drafting' : (this.isActive ? 'active' : 'idle');
+                await this.publishStateChange(newState);
+                this.log(`✏️ Draft status changed: ${newState}`);
+            }
+            
+            // Update everyone's draft indicators
+            if (this.isComponentActive) {
+                this.visibleUsers = this.mergeDraftData(this.visibleUsers, drafts);
+            }
+            
+        } catch (error) {
+            if (this.isComponentActive) {
+                console.error('Error checking drafts:', error);
+            }
+        }
+    }
+
+    async publishStateChange(newState) {
+        if (!this.isComponentActive || !this.recordId) return;
+        
+        // Don't republish same state
+        if (newState === this.currentState) {
+            this.log('⏭️ State unchanged, skipping publish');
+            return;
+        }
+
+        this.currentState = newState;
+        
+        try {
             await publishPresence({
                 caseId: this.recordId,
                 sessionId: this.sessionId,
-                state: state,
-                isActive: this.isActive
+                state: newState,
+                isActive: this.isActive,
+                callType: newState.includes('draft') ? 'draftCheck' : 'heartbeat'
             });
+            
+            if (!this.isComponentActive) return;
+            
+            this.log(`📤 Published state change: ${newState}`, { isActive: this.isActive });
+            
+            // Update own presence in list immediately
+            this.updateOwnPresence(newState);
+            
         } catch (error) {
-            console.error('Error sending heartbeat:', error);
-        }
-    }
-    
-    startDraftCheck() {
-        this.draftCheckInterval = setInterval(async () => {
-            await this.checkForDrafts();
-        }, 10000); // Check every 10 seconds
-    }
-    
-    async checkForDrafts() {
-        try {
-            const drafts = await getRecentDrafts({ caseId: this.recordId });
-            
-            // Update presence map with draft info
-            for (const draft of drafts) {
-                // Find all sessions for this user and update with user data
-                for (let [key, presence] of this.presenceMap) {
-                    if (presence.userId === draft.userId) {
-                        presence.isEditing = true;
-                        presence.isDrafting = true;
-                        // Update user data if not already set
-                        if (!presence.userName) {
-                            presence.userName = draft.userName;
-                            presence.userPhotoUrl = draft.userPhotoUrl;
-                        }
-                        this.presenceMap.set(key, presence);
-                    }
-                }
-            }
-            
-            this.updateVisibleUsers();
-        } catch (error) {
-            console.error('Error checking drafts:', error);
-        }
-    }
-    
-    startPresenceCleanup() {
-        this.visibilityCheckInterval = setInterval(() => {
-            this.cleanupStalePresence();
-        }, 60000); // Check every minute
-    }
-    
-    cleanupStalePresence() {
-        const expirationMs = this.settings.presenceExpirationMinutes * 60 * 1000;
-        const cutoffTime = new Date(Date.now() - expirationMs);
-        
-        let hasChanges = false;
-        const removedUsers = new Map(); // Track unique users being removed
-        
-        for (let [key, presence] of this.presenceMap) {
-            if (presence.timestamp < cutoffTime) {
-                // Track this user for toast notification
-                if (!removedUsers.has(presence.userId)) {
-                    removedUsers.set(presence.userId, presence.userName);
-                }
-                this.presenceMap.delete(key);
-                hasChanges = true;
+            if (this.isComponentActive) {
+                console.error('Error publishing state change:', error);
             }
         }
-        
-        // Show toast for each unique user that timed out
-        for (let [userId, userName] of removedUsers) {
-            this.showGoneToast(userId, userName);
-        }
-        
-        if (hasChanges) {
-            this.updateVisibleUsers();
-        }
     }
-    
-    updateVisibleUsers() {
-        // Convert map to array and merge by userId
-        const userMap = new Map();
-        
-        for (let [key, presence] of this.presenceMap) {
-            // Skip current user
-            if (presence.userId === this.currentUserId) {
-                continue;
-            }
-            
-            const existingUser = userMap.get(presence.userId);
-            
-            if (!existingUser) {
-                // Add new user
-                const user = {
-                    userId: presence.userId,
-                    userName: presence.userName,
-                    userPhotoUrl: presence.userPhotoUrl,
-                    isActive: presence.isActive,
-                    isEditing: presence.isEditing,
-                    timestamp: presence.timestamp
-                };
-                // Add computed properties
-                user.style = this.getUserStyle(user);
-                user.timeAgo = this.getTimeAgo(user);
-                userMap.set(presence.userId, user);
-            } else {
-                // Merge states - if ANY session is active, mark as active
-                // If ANY session is editing, mark as editing
-                existingUser.isActive = existingUser.isActive || presence.isActive;
-                existingUser.isEditing = existingUser.isEditing || presence.isEditing;
-                existingUser.timestamp = new Date(Math.max(
-                    existingUser.timestamp.getTime(),
-                    presence.timestamp.getTime()
-                ));
-                // Update computed properties
-                existingUser.style = this.getUserStyle(existingUser);
-                existingUser.timeAgo = this.getTimeAgo(existingUser);
-                userMap.set(presence.userId, existingUser);
-            }
-        }
-        
-        // Convert to array and sort
-        let users = Array.from(userMap.values());
-        
-        // Sort: editing first, then by timestamp
-        users.sort((a, b) => {
-            if (a.isEditing && !b.isEditing) return -1;
-            if (!a.isEditing && b.isEditing) return 1;
-            return b.timestamp - a.timestamp;
-        });
-        
-        this.visibleUsers = users;
-    }
-    
-    setupVisibilityTracking() {
-        // Track when tab becomes active/inactive
-        this.visibilityChangeHandler = () => {
-            this.isActive = !document.hidden;
-            if (this.isActive) {
-                this.sendHeartbeat();
-            }
-        };
-        document.addEventListener('visibilitychange', this.visibilityChangeHandler);
-        
-        // Track focus/blur
-        this.focusHandler = () => {
-            this.isActive = true;
-            this.sendHeartbeat();
-        };
-        window.addEventListener('focus', this.focusHandler);
-        
-        this.blurHandler = () => {
-            this.isActive = false;
-            this.sendHeartbeat();
-        };
-        window.addEventListener('blur', this.blurHandler);
-    }
-    
-    setupEditModeDetection() {
-        // Check for edit mode every 2 seconds
-        this.editModeCheckInterval = setInterval(() => {
-            this.checkEditMode();
-        }, 2000);
-        
-        // Initial check
-        this.checkEditMode();
-    }
-    
-    checkEditMode() {
-        // Look for edit form in the DOM
-        // Lightning record forms have these selectors when in edit mode
-        const editForm = document.querySelector(
-            'force-record-edit-form, ' +
-            'lightning-record-edit-form, ' +
-            'lightning-record-form[mode="edit"], ' +
-            '.forceRecordLayout.uiInput'
+
+    updateOwnPresence(state) {
+        const existingIndex = this.visibleUsers.findIndex(
+            u => u.userId === this.currentUserId && u.sessionId === this.sessionId
         );
-        
-        const newEditState = !!editForm;
-        
-        // Only send heartbeat if state changed
-        if (newEditState !== this.isEditing) {
-            this.isEditing = newEditState;
-            console.log(`Edit mode changed to: ${this.isEditing}`);
-            this.sendHeartbeat(); // Immediately publish new state
+
+        const ownUser = {
+            userId: this.currentUserId,
+            userName: this.currentUserName + ' (you)',
+            userPhotoUrl: null,
+            state: state,
+            sessionId: this.sessionId,
+            lastSeen: new Date(),
+            isActive: this.isActive,
+            hasDraft: this.hasDrafts
+        };
+
+        if (existingIndex !== -1) {
+            this.visibleUsers = [
+                ...this.visibleUsers.slice(0, existingIndex),
+                ownUser,
+                ...this.visibleUsers.slice(existingIndex + 1)
+            ];
+        } else {
+            this.visibleUsers = [...this.visibleUsers, ownUser];
         }
     }
-    
+
+    startExpirationFilter() {
+        if (this.expirationCheckInterval) {
+            clearInterval(this.expirationCheckInterval);
+        }
+
+        this.expirationCheckInterval = setInterval(() => {
+            this.filterExpiredUsers();
+        }, EXPIRATION_CHECK_INTERVAL);
+
+        this.log('✅ Expiration filter started');
+    }
+
+    filterExpiredUsers() {
+        const now = Date.now();
+        const beforeCount = this.visibleUsers.length;
+        
+        this.visibleUsers = this.visibleUsers.filter(user => {
+            const lastSeenTime = new Date(user.lastSeen).getTime();
+            const age = now - lastSeenTime;
+            return age < PRESENCE_EXPIRATION_MS;
+        });
+
+        const afterCount = this.visibleUsers.length;
+        if (beforeCount !== afterCount) {
+            this.log(`🧹 Filtered ${beforeCount - afterCount} expired users`);
+        }
+    }
+
+    startTimeAgoUpdates() {
+        if (this.timeAgoInterval) {
+            clearInterval(this.timeAgoInterval);
+        }
+
+        this.timeAgoInterval = setInterval(() => {
+            // Force reactive update
+            this.visibleUsers = [...this.visibleUsers];
+        }, 30000); // Every 30 seconds
+    }
+
+    startVisibilityMonitoring() {
+        this.visibilityChangeHandler = () => {
+            if (document.visibilityState === 'visible') {
+                this.handleTabFocus();
+            } else {
+                this.handleTabBlur();
+            }
+        };
+
+        document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+    }
+
+    startPresenceCleanup() {
+        // Clean up stale presence every 5 minutes
+        this.presenceCleanupInterval = setInterval(() => {
+            this.filterExpiredUsers();
+        }, 300000);
+    }
+
+    async handleRecordIdChange(newRecordId, oldRecordId) {
+        if (newRecordId === oldRecordId) return;
+
+        this.log('🔄 Case changed', { from: oldRecordId, to: newRecordId });
+
+        // Send goodbye for old case
+        if (oldRecordId) {
+            try {
+                await publishPresence({
+                    caseId: oldRecordId,
+                    sessionId: this.sessionId,
+                    state: 'gone',
+                    isActive: false,
+                    callType: 'heartbeat'
+                });
+            } catch (error) {
+                this.log('Error sending goodbye:', error);
+            }
+        }
+
+        // Reset state
+        this.visibleUsers = [];
+        this.currentState = null;
+        this.hasDrafts = false;
+        this.caseNumber = '';
+        this.caseSubject = '';
+
+        // Load new case
+        if (newRecordId) {
+            await this.loadInitialPresence();
+            await this.publishStateChange(this.isActive ? 'active' : 'idle');
+        }
+    }
+
+    async handleTabFocus() {
+        this.log('👁️ Tab gained focus');
+        this.isActive = true;
+        
+        const newState = this.hasDrafts ? 'drafting' : 'active';
+        await this.publishStateChange(newState);
+        
+        // Resume draft checking
+        this.startDraftChecking();
+    }
+
+    async handleTabBlur() {
+        this.log('👋 Tab lost focus');
+        this.isActive = false;
+        
+        const newState = this.hasDrafts ? 'drafting' : 'idle';
+        await this.publishStateChange(newState);
+        
+        // Stop draft checking (save API calls)
+        this.stopDraftChecking();
+    }
+
     setupBeforeUnload() {
-        // Clean up on page unload
         this.beforeUnloadHandler = () => {
-            // Send goodbye notification before cleanup
             this.sendGoodbyeHeartbeat();
             this.cleanup();
         };
         window.addEventListener('beforeunload', this.beforeUnloadHandler);
     }
-    
+
+    sendGoodbyeHeartbeat() {
+        if (!this.recordId) return;
+
+        this.log('👋 Sending goodbye');
+        
+        publishPresence({
+            caseId: this.recordId,
+            sessionId: this.sessionId,
+            state: 'gone',
+            isActive: false,
+            callType: 'heartbeat'
+        }).catch(error => {
+            console.debug('Goodbye heartbeat failed (expected during unload)');
+        });
+    }
+
     cleanup() {
         this.isComponentActive = false;
-        
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-        }
-        
+
         if (this.draftCheckInterval) {
             clearInterval(this.draftCheckInterval);
         }
-        
-        if (this.visibilityCheckInterval) {
-            clearInterval(this.visibilityCheckInterval);
+
+        if (this.expirationCheckInterval) {
+            clearInterval(this.expirationCheckInterval);
         }
-        
-        if (this.editModeCheckInterval) {
-            clearInterval(this.editModeCheckInterval);
+
+        if (this.timeAgoInterval) {
+            clearInterval(this.timeAgoInterval);
         }
-        
+
+        if (this.presenceCleanupInterval) {
+            clearInterval(this.presenceCleanupInterval);
+        }
+
         if (this.subscription) {
             unsubscribe(this.subscription);
         }
-        
-        // Remove event listeners to prevent memory leaks
+
         if (this.visibilityChangeHandler) {
             document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
         }
-        if (this.focusHandler) {
-            window.removeEventListener('focus', this.focusHandler);
-        }
-        if (this.blurHandler) {
-            window.removeEventListener('blur', this.blurHandler);
-        }
+
         if (this.beforeUnloadHandler) {
             window.removeEventListener('beforeunload', this.beforeUnloadHandler);
         }
     }
-    
-    // Getters for template
-    get hasVisibleUsers() {
-        return this.visibleUsers.length > 0;
+
+    showJoinToast(userName) {
+        const event = new ShowToastEvent({
+            title: 'User Joined',
+            message: `${userName} is now viewing this case`,
+            variant: 'info',
+            mode: 'dismissable'
+        });
+        this.dispatchEvent(event);
     }
-    
-    get displayedUsers() {
-        return this.isMobile ? this.visibleUsers : this.visibleUsers.slice(0, 5);
+
+    showLeaveToast(userName) {
+        const event = new ShowToastEvent({
+            title: 'User Left',
+            message: `${userName} has left this case`,
+            variant: 'info',
+            mode: 'dismissable'
+        });
+        this.dispatchEvent(event);
     }
-    
-    get additionalCount() {
-        return this.visibleUsers.length > 5 ? this.visibleUsers.length - 5 : 0;
+
+    generateSessionId() {
+        return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
-    
-    get showAdditionalCount() {
-        return !this.isMobile && this.additionalCount > 0;
-    }
-    
-    get mobileUserList() {
-        return this.visibleUsers.map(user => {
-            let name = user.userName || 'Unknown';
-            if (user.isEditing) {
-                name += ' (editing)';
-            } else if (!user.isActive) {
-                name += ' (idle)';
-            }
-            return name;
-        }).join(', ');
-    }
-    
-    // Helper methods for template
-    getUserOpacity(user) {
-        return user.isActive ? '1' : '0.5';
-    }
-    
-    getUserBorder(user) {
-        return user.isEditing ? '2px solid #0176d3' : 'none';
-    }
-    
-    getUserStyle(user) {
-        const opacity = user.isActive ? '1' : '0.5';
-        const border = user.isEditing ? '2px solid #0176d3' : 'none';
-        return `opacity: ${opacity}; border: ${border}; border-radius: 50%;`;
-    }
-    
-    getTimeAgo(user) {
-        const now = new Date();
-        const diff = now - user.timestamp;
-        const minutes = Math.floor(diff / 60000);
+
+    getTimeAgo(lastSeenDate) {
+        if (!lastSeenDate) return '';
         
-        if (minutes < 1) {
-            return 'Active now';
-        } else if (minutes < 60) {
-            return `${minutes}m ago`;
-        } else {
-            const hours = Math.floor(minutes / 60);
-            return `${hours}h ago`;
+        const now = Date.now();
+        const lastSeen = new Date(lastSeenDate).getTime();
+        const diffMs = now - lastSeen;
+        const diffMins = Math.floor(diffMs / 60000);
+        
+        if (diffMins < 1) return 'just now';
+        if (diffMins === 1) return '1 min ago';
+        if (diffMins < 60) return `${diffMins} mins ago`;
+        
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours === 1) return '1 hour ago';
+        return `${diffHours} hours ago`;
+    }
+
+    get displayUsers() {
+        return this.visibleUsers.map(user => ({
+            ...user,
+            timeAgo: this.getTimeAgo(user.lastSeen),
+            isCurrentUser: user.userId === this.currentUserId && user.sessionId === this.sessionId,
+            stateLabel: this.getStateLabel(user),
+            stateIcon: this.getStateIcon(user),
+            avatarClass: this.getAvatarClass(user),
+            draftIndicator: user.hasDraft ? `✏️ Draft (${user.draftAgeMinutes}m)` : ''
+        }));
+    }
+
+    getStateLabel(user) {
+        const isActive = user.state === 'active' || user.isActive;
+        
+        // Focused (active)
+        if (isActive) {
+            // Has recent draft (< 5 mins)
+            if (user.hasDraft) {
+                return 'Editing';
+            }
+            // No draft
+            return 'Active';
         }
+        
+        // Not focused (idle) - show time when they went idle
+        const idleTime = this.formatIdleTime(user.lastSeen);
+        return `Idle since ${idleTime}`;
+    }
+
+    getStateIcon(user) {
+        // Only show pencil if has recent draft (< 5 mins)
+        if (user.hasDraft) return '✏️';
+        
+        // No icon otherwise (removed circles)
+        return '';
+    }
+
+    getAvatarClass(user) {
+        let baseClass = 'presence-avatar';
+        const isActive = user.state === 'active' || user.isActive;
+        
+        // Focused = 100% opacity
+        if (isActive) {
+            return `${baseClass} active`;
+        }
+        
+        // Not focused = 50% opacity
+        return `${baseClass} idle`;
     }
     
-    getUserTextColor(user) {
-        if (user.isEditing) {
-            return 'color: #0176d3; font-weight: bold;';
-        } else if (!user.isActive) {
-            return 'color: #747474;';
-        }
-        return 'color: #181818;';
+    formatIdleTime(lastSeenDate) {
+        if (!lastSeenDate) return '';
+        
+        const date = new Date(lastSeenDate);
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        
+        return `${hours}:${minutes}`;
     }
-    
-    handleAvatarHover(event) {
-        const userId = event.currentTarget.dataset.userid;
-        const tooltip = this.template.querySelector(`.custom-tooltip[data-userid="${userId}"]`);
-        if (tooltip) {
-            tooltip.style.display = 'block';
-        }
-    }
-    
-    handleAvatarLeave(event) {
-        const userId = event.currentTarget.dataset.userid;
-        const tooltip = this.template.querySelector(`.custom-tooltip[data-userid="${userId}"]`);
-        if (tooltip) {
-            tooltip.style.display = 'none';
+
+    log(...args) {
+        if (this.debugLogging) {
+            console.log('[Case Presence]', ...args);
         }
     }
 }

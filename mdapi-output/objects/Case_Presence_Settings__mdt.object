@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Case Presence Settings</label>
+    <pluralLabel>Case Presence Settings</pluralLabel>
+    <visibility>Public</visibility>
+    <fields>
+        <fullName>Draft_Staleness_Minutes__c</fullName>
+        <defaultValue>5</defaultValue>
+        <label>Draft Staleness (Minutes)</label>
+        <precision>3</precision>
+        <required>false</required>
+        <scale>0</scale>
+        <type>Number</type>
+        <unique>false</unique>
+    </fields>
+    <fields>
+        <fullName>Heartbeat_Frequency_Seconds__c</fullName>
+        <defaultValue>20</defaultValue>
+        <label>Heartbeat Frequency (Seconds)</label>
+        <precision>3</precision>
+        <required>false</required>
+        <scale>0</scale>
+        <type>Number</type>
+        <unique>false</unique>
+    </fields>
+    <fields>
+        <fullName>Presence_Expiration_Minutes__c</fullName>
+        <defaultValue>10</defaultValue>
+        <label>Presence Expiration (Minutes)</label>
+        <precision>3</precision>
+        <required>false</required>
+        <scale>0</scale>
+        <type>Number</type>
+        <unique>false</unique>
+    </fields>
+    <fields>
+        <fullName>Show_Edit_Start_Toasts__c</fullName>
+        <defaultValue>true</defaultValue>
+        <label>Show Edit Start Toasts</label>
+        <type>Checkbox</type>
+    </fields>
+    <fields>
+        <fullName>Show_Edit_Stop_Toasts__c</fullName>
+        <defaultValue>true</defaultValue>
+        <label>Show Edit Stop Toasts</label>
+        <type>Checkbox</type>
+    </fields>
+    <fields>
+        <fullName>Show_Join_Toasts__c</fullName>
+        <defaultValue>true</defaultValue>
+        <label>Show Join Toasts</label>
+        <type>Checkbox</type>
+    </fields>
+    <fields>
+        <fullName>Show_Leave_Toasts__c</fullName>
+        <defaultValue>true</defaultValue>
+        <label>Show Leave Toasts</label>
+        <type>Checkbox</type>
+    </fields>
+</CustomObject>

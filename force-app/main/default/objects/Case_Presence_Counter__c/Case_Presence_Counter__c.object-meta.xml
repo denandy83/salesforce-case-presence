@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <label>Case Presence Counter</label>
+    <pluralLabel>Case Presence Counters</pluralLabel>
+    <nameField>
+        <label>Counter Name</label>
+        <type>Text</type>
+    </nameField>
+    <sharingModel>ReadWrite</sharingModel>
+    <description>Tracks aggregate statistics for Case Presence usage</description>
+</CustomObject>

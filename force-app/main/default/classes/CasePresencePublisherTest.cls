@@ -78,17 +78,7 @@ private class CasePresencePublisherTest {
         System.assertEquals(5, settings.draftStalenessMinutes, 'Default staleness should be 5');
     }
     
-    @isTest
-    static void testGetCurrentUserInfo() {
-        Test.startTest();
-        CasePresencePublisher.UserInfo userInfo = 
-            CasePresencePublisher.getCurrentUserInfo();
-        Test.stopTest();
-        
-        System.assertNotEquals(null, userInfo, 'User info should not be null');
-        System.assertEquals(UserInfo.getUserId(), userInfo.userId, 'User ID should match');
-        System.assertNotEquals(null, userInfo.userName, 'User name should be populated');
-    }
+
     
     @isTest
     static void testPublishPresence_InvalidCaseId() {

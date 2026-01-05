@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Normal_Users__c</fullName>
+    <label>Normal Users</label>
+    <description>Comma-separated list of normal user first names (e.g., Tom,Lisa,Bob)</description>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+</CustomField>

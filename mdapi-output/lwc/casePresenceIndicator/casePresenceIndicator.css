@@ -1,0 +1,51 @@
+.presence-container {
+    background-color: #f3f3f3;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 0;
+}
+
+.presence-container-mobile {
+    background-color: #f3f3f3;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 0;
+}
+
+.avatar-wrapper {
+    position: relative;
+    margin-right: 8px;
+    display: inline-block;
+}
+
+.custom-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    z-index: 9999;
+}
+
+.custom-tooltip .slds-popover {
+    position: relative;
+    width: auto;
+    min-width: 120px;
+}
+
+/* Hide component when no users */
+:host([hidden]) {
+    display: none;
+}
+
+/* Avatar styling */
+lightning-avatar {
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+/* Ensure avatars are circular with proper borders */
+lightning-avatar::part(avatar) {
+    border-radius: 50%;
+}

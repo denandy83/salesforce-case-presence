@@ -10,17 +10,33 @@
                 </div>
                 <div class="slds-m-top_x-small slds-grid slds-grid_align-start slds-grid_vertical-align-center">
                     <template for:each={displayedUsers} for:item="user">
-                        <div key={user.userId} class="avatar-wrapper" title={user.userName}>
-                            <lightning-avatar
-                                src={user.userPhotoUrl}
-                                fallback-icon-name="standard:user"
-                                size="small"
-                                alternative-text={user.userName}
-                                data-userid={user.userId}
-                                onmouseenter={handleAvatarHover}
-                                onmouseleave={handleAvatarLeave}
-                                style={user.style}>
-                            </lightning-avatar>
+                        <div key={user.userId} 
+                             class="avatar-wrapper" 
+                             title={user.userName}
+                             data-userid={user.userId}
+                             onmouseenter={handleAvatarHover}
+                             onmouseleave={handleAvatarLeave}>
+                            <div class="avatar-container">
+                                <!-- Badge for categorized users -->
+                                <template if:true={user.badge}>
+                                    <div class="user-badge">{user.badge}</div>
+                                </template>
+                                <div class="avatar-photo" style={user.style}>
+                                    <lightning-avatar
+                                        src={user.userPhotoUrl}
+                                        fallback-icon-name="standard:user"
+                                        size="small"
+                                        alternative-text={user.userName}>
+                                    </lightning-avatar>
+                                    <!-- Pencil icon when editing -->
+                                    <template if:true={user.isEditing}>
+                                        <div class="editing-badge">
+                                            <lightning-icon icon-name="utility:edit" size="xx-small"></lightning-icon>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="user-name-label">{user.userName}</div>
+                            </div>
                             <!-- Tooltip -->
                             <div class="custom-tooltip" data-userid={user.userId}>
                                 <div class="slds-popover slds-popover_tooltip slds-nubbin_bottom" role="tooltip">
