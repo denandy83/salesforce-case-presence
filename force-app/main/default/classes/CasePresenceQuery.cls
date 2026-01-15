@@ -1,4 +1,4 @@
-public with sharing class CasePresenceQuery {
+public without sharing class CasePresenceQuery {
     
     /**
      * Get current presence state for a case (query database log)
@@ -9,12 +9,13 @@ public with sharing class CasePresenceQuery {
         DateTime tenMinutesAgo = DateTime.now().addMinutes(-10);
         
         List<Case_Presence_Log__c> logs = [
-            SELECT User_Id__c, State__c, Last_Updated__c, Session_Id__c, Is_Active__c
+            SELECT User_Id__c, State__c, Last_Updated__c, Has_Draft__c
             FROM Case_Presence_Log__c
             WHERE Case_Id__c = :caseId
             AND Last_Updated__c > :tenMinutesAgo
             AND State__c != 'gone'
-            ORDER BY Last_Updated__c DESC
+            AND User_Id__c != :UserInfo.getUserId()
+            ORDER BY User_Id__c, Last_Updated__c DESC
         ];
         
         List<PresenceUser> users = new List<PresenceUser>();
@@ -28,9 +29,8 @@ public with sharing class CasePresenceQuery {
                 PresenceUser user = new PresenceUser();
                 user.userId = log.User_Id__c;
                 user.state = log.State__c;
-                user.isActive = log.Is_Active__c;
                 user.lastSeen = log.Last_Updated__c;
-                user.sessionId = log.Session_Id__c;
+                user.hasDraft = log.Has_Draft__c != null ? log.Has_Draft__c : false;
                 users.add(user);
             }
         }
@@ -70,17 +70,17 @@ public with sharing class CasePresenceQuery {
         // Query Email drafts
         try {
             List<EmailMessage> emailDrafts = [
-                SELECT Id, CreatedById, CreatedDate
+                SELECT Id, CreatedById, LastModifiedDate
                 FROM EmailMessage
                 WHERE ParentId = :caseId
-                AND Status = 'Draft'
-                AND CreatedDate > :tenMinutesAgo
+                AND Status = '5'
+                AND LastModifiedDate > :tenMinutesAgo
             ];
             
             for (EmailMessage em : emailDrafts) {
                 DraftInfo draft = new DraftInfo();
                 draft.userId = em.CreatedById;
-                draft.createdDate = em.CreatedDate;
+                draft.lastModifiedDate = em.LastModifiedDate;
                 draft.draftType = 'email';
                 drafts.add(draft);
             }
@@ -124,9 +124,8 @@ public with sharing class CasePresenceQuery {
         @AuraEnabled public String userName { get; set; }
         @AuraEnabled public String userPhotoUrl { get; set; }
         @AuraEnabled public String state { get; set; }
-        @AuraEnabled public Boolean isActive { get; set; }
         @AuraEnabled public DateTime lastSeen { get; set; }
-        @AuraEnabled public String sessionId { get; set; }
+        @AuraEnabled public Boolean hasDraft { get; set; }
     }
     
     /**
@@ -134,7 +133,7 @@ public with sharing class CasePresenceQuery {
      */
     public class DraftInfo {
         @AuraEnabled public String userId { get; set; }
-        @AuraEnabled public DateTime createdDate { get; set; }
+        @AuraEnabled public DateTime lastModifiedDate { get; set; }
         @AuraEnabled public String draftType { get; set; }
     }
     

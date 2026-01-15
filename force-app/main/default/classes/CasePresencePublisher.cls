@@ -3,44 +3,42 @@ public with sharing class CasePresencePublisher {
     /**
      * Publish a presence event for a user viewing/editing a case
      * @param caseId The Case ID
-     * @param sessionId The unique session identifier
-     * @param state The current state (viewing/editing/drafting)
-     * @param isActive Whether the tab is currently active
-     * @param callType Type of call: 'heartbeat' or 'draftCheck'
+     * @param state The current state (active/idle/gone)
+     * @param hasDraft Whether the user has an active draft
+     * @param callType Type of call: 'heartbeat' or 'focus'
      */
     @AuraEnabled
-    public static void publishPresence(String caseId, String sessionId, String state, Boolean isActive, String callType) {
+    public static void publishPresence(String caseId, String state, Boolean hasDraft, String callType) {
         try {
             // Get current user's name and photo
             User currentUser = [
-                SELECT Name, FirstName, LastName, SmallPhotoUrl 
+                SELECT FirstName, LastName, Name, SmallPhotoUrl 
                 FROM User 
                 WHERE Id = :UserInfo.getUserId() 
                 LIMIT 1
             ];
-            String fullName = currentUser.Name != null ? currentUser.Name : UserInfo.getName();
+            String fullName = currentUser.Name;
             String photoUrl = currentUser.SmallPhotoUrl;
             
-            // Get case number
-            String caseNumber = '';
+            // Get Case Number for logging
+            String caseNumber = null;
             try {
-                Case c = [SELECT CaseNumber FROM Case WHERE Id = :caseId LIMIT 1];
-                caseNumber = c.CaseNumber;
-            } catch (Exception e) {
-                System.debug('Could not get case number: ' + e.getMessage());
+                Case caseRecord = [SELECT CaseNumber FROM Case WHERE Id = :caseId LIMIT 1];
+                caseNumber = caseRecord.CaseNumber;
+            } catch (Exception ex) {
+                System.debug('Could not fetch Case Number: ' + ex.getMessage());
             }
             
             Case_Presence__e event = new Case_Presence__e(
                 CaseId__c = caseId,
+                CaseNumber__c = caseNumber,
                 UserId__c = UserInfo.getUserId(),
                 UserName__c = fullName,
                 UserPhotoUrl__c = photoUrl,
-                SessionId__c = sessionId,
                 State__c = state,
-                IsActive__c = isActive,
+                HasDraft__c = hasDraft,
                 Timestamp__c = DateTime.now(),
-                CallType__c = callType,
-                CaseNumber__c = caseNumber
+                CallType__c = callType
             );
             
             Database.SaveResult result = EventBus.publish(event);
@@ -125,7 +123,7 @@ public with sharing class CasePresencePublisher {
     @AuraEnabled(cacheable=false)
     public static UserData getCurrentUserInfo() {
         User currentUser = [
-            SELECT Id, Name, FirstName, LastName, SmallPhotoUrl, MediumPhotoUrl, FullPhotoUrl
+            SELECT Id, FirstName, SmallPhotoUrl, MediumPhotoUrl, FullPhotoUrl
             FROM User
             WHERE Id = :UserInfo.getUserId()
             WITH SECURITY_ENFORCED
@@ -134,7 +132,7 @@ public with sharing class CasePresencePublisher {
         
         UserData info = new UserData();
         info.userId = currentUser.Id;
-        info.userName = currentUser.Name != null ? currentUser.Name : 'User';
+        info.userName = currentUser.FirstName != null ? currentUser.FirstName : 'User';
         
         // Try multiple photo URL fields in order of preference
         if (currentUser.SmallPhotoUrl != null) {

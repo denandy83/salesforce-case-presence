@@ -15,13 +15,12 @@ trigger CasePresenceCounter on Case_Presence__e (after insert) {
         }
         
         // Create/update presence log
-        String logKey = event.CaseId__c + '_' + event.UserId__c + '_' + event.SessionId__c;
+        String logKey = event.CaseId__c + '_' + event.UserId__c;
         Case_Presence_Log__c log = new Case_Presence_Log__c(
             Case_Id__c = event.CaseId__c,
             User_Id__c = event.UserId__c,
-            Session_Id__c = event.SessionId__c,
             State__c = event.State__c,
-            Is_Active__c = event.IsActive__c,
+            Has_Draft__c = event.HasDraft__c,
             Last_Updated__c = event.Timestamp__c != null ? event.Timestamp__c : System.now(),
             User_Name__c = event.UserName__c,
             Case_Number__c = event.CaseNumber__c
