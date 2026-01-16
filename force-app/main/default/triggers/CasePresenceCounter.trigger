@@ -23,7 +23,8 @@ trigger CasePresenceCounter on Case_Presence__e (after insert) {
             Has_Draft__c = event.HasDraft__c,
             Last_Updated__c = event.Timestamp__c != null ? event.Timestamp__c : System.now(),
             User_Name__c = event.UserName__c,
-            Case_Number__c = event.CaseNumber__c
+            Case_Number__c = event.CaseNumber__c,
+            IsMobile__c = event.IsMobile__c
         );
         logsToUpsert.put(logKey, log);
     }

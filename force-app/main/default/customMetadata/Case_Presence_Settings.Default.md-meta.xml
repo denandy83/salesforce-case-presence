@@ -30,4 +30,12 @@
         <field>Show_Leave_Toasts__c</field>
         <value xsi:type="xsd:boolean" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">true</value>
     </values>
+    <values>
+        <field>Draft_Check_Interval_Seconds__c</field>
+        <value xsi:type="xsd:double" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">10</value>
+    </values>
+    <values>
+        <field>Expiration_Check_Interval_Seconds__c</field>
+        <value xsi:type="xsd:double" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">60</value>
+    </values>
 </CustomMetadata>

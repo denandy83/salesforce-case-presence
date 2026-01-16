@@ -110,5 +110,11 @@ public class CasePresenceCounterHelper {
         @AuraEnabled public Integer draftCheckCount { get; set; }
         @AuraEnabled public Integer totalApiCalls { get; set; }
         @AuraEnabled public DateTime lastResetDate { get; set; }
+
+        public CounterStats() {
+            this.heartbeatCount = 0;
+            this.draftCheckCount = 0;
+            this.totalApiCalls = 0;
+        }
     }
 }

@@ -9,11 +9,11 @@ public without sharing class CasePresenceQuery {
         DateTime tenMinutesAgo = DateTime.now().addMinutes(-10);
         
         List<Case_Presence_Log__c> logs = [
-            SELECT User_Id__c, State__c, Last_Updated__c, Has_Draft__c
+            SELECT User_Id__c, State__c, Last_Updated__c, Has_Draft__c, IsMobile__c
             FROM Case_Presence_Log__c
             WHERE Case_Id__c = :caseId
             AND Last_Updated__c > :tenMinutesAgo
-            AND State__c != 'gone'
+            AND (State__c != 'gone' OR IsMobile__c = TRUE)
             AND User_Id__c != :UserInfo.getUserId()
             ORDER BY User_Id__c, Last_Updated__c DESC
         ];
@@ -31,6 +31,7 @@ public without sharing class CasePresenceQuery {
                 user.state = log.State__c;
                 user.lastSeen = log.Last_Updated__c;
                 user.hasDraft = log.Has_Draft__c != null ? log.Has_Draft__c : false;
+                user.isMobile = log.IsMobile__c;
                 users.add(user);
             }
         }
@@ -126,6 +127,7 @@ public without sharing class CasePresenceQuery {
         @AuraEnabled public String state { get; set; }
         @AuraEnabled public DateTime lastSeen { get; set; }
         @AuraEnabled public Boolean hasDraft { get; set; }
+        @AuraEnabled public Boolean isMobile { get; set; }
     }
     
     /**

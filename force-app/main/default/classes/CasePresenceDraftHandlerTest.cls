@@ -13,91 +13,56 @@ private class CasePresenceDraftHandlerTest {
     }
     
     @isTest
-    static void testGetRecentDrafts_WithDrafts() {
+    static void testCurrentUserHasDraftEmails_WithDrafts() {
         Case testCase = [SELECT Id FROM Case LIMIT 1];
         
-        // Create draft FeedItem
-        FeedItem draft = new FeedItem(
+        // Create draft EmailMessage
+        EmailMessage draft = new EmailMessage(
             ParentId = testCase.Id,
-            Body = 'Test draft',
-            Status = 'Draft'
+            Subject = 'Test Draft',
+            Status = '5', // 5 = Draft
+            HtmlBody = 'Test body',
+            ToAddress = 'test@example.com'
         );
         insert draft;
         
         Test.startTest();
-        List<CasePresenceDraftHandler.DraftInfo> drafts = 
-            CasePresenceDraftHandler.getRecentDrafts(testCase.Id);
+        Boolean hasDrafts = CasePresenceDraftHandler.currentUserHasDraftEmails(testCase.Id);
+        Boolean hasAnyDrafts = CasePresenceDraftHandler.currentUserHasAnyDrafts(testCase.Id);
         Test.stopTest();
         
-        System.assertEquals(1, drafts.size(), 'Should find one draft');
-        System.assertEquals(UserInfo.getUserId(), drafts[0].userId, 'Draft should be from current user');
-        System.assertNotEquals(null, drafts[0].userName, 'User name should be populated');
+        System.assertEquals(true, hasDrafts, 'Should find one draft email');
+        System.assertEquals(true, hasAnyDrafts, 'Should find any drafts');
     }
     
     @isTest
-    static void testGetRecentDrafts_NoDrafts() {
+    static void testCurrentUserHasDraftEmails_NoDrafts() {
         Case testCase = [SELECT Id FROM Case LIMIT 1];
         
         Test.startTest();
-        List<CasePresenceDraftHandler.DraftInfo> drafts = 
-            CasePresenceDraftHandler.getRecentDrafts(testCase.Id);
+        Boolean hasDrafts = CasePresenceDraftHandler.currentUserHasDraftEmails(testCase.Id);
         Test.stopTest();
         
-        System.assertEquals(0, drafts.size(), 'Should find no drafts');
+        System.assertEquals(false, hasDrafts, 'Should find no drafts');
     }
-    
     @isTest
-    static void testGetRecentDrafts_PublishedPost() {
+    static void testCurrentUserHasDraftEmails_SentEmail() {
         Case testCase = [SELECT Id FROM Case LIMIT 1];
         
-        // Create published FeedItem (not draft)
-        FeedItem post = new FeedItem(
+        // Create SENT EmailMessage (Status 3 = Sent)
+        EmailMessage sentEmail = new EmailMessage(
             ParentId = testCase.Id,
-            Body = 'Test post',
-            Status = 'Published'
+            Subject = 'Sent Email',
+            Status = '3',
+            HtmlBody = 'Sent body',
+            ToAddress = 'test@example.com'
         );
-        insert post;
+        insert sentEmail;
         
         Test.startTest();
-        List<CasePresenceDraftHandler.DraftInfo> drafts = 
-            CasePresenceDraftHandler.getRecentDrafts(testCase.Id);
+        Boolean hasDrafts = CasePresenceDraftHandler.currentUserHasDraftEmails(testCase.Id);
         Test.stopTest();
         
-        System.assertEquals(0, drafts.size(), 'Should not find published posts');
-    }
-    
-    @isTest
-    static void testGetRecentDrafts_InvalidCaseId() {
-        Test.startTest();
-        try {
-            CasePresenceDraftHandler.getRecentDrafts('invalid-id');
-            System.assert(false, 'Should have thrown an exception');
-        } catch (AuraHandledException e) {
-            System.assert(true, 'Expected exception was thrown');
-        }
-        Test.stopTest();
-    }
-    
-    @isTest
-    static void testGetRecentDrafts_WithOldDrafts() {
-        Case testCase = [SELECT Id FROM Case LIMIT 1];
-        
-        // Create draft FeedItem
-        FeedItem draft = new FeedItem(
-            ParentId = testCase.Id,
-            Body = 'Test draft',
-            Status = 'Draft'
-        );
-        insert draft;
-        
-        // Update the created date to be older than staleness threshold
-        // Note: In real scenario, old drafts would be filtered by the query
-        Test.startTest();
-        List<CasePresenceDraftHandler.DraftInfo> drafts = 
-            CasePresenceDraftHandler.getRecentDrafts(testCase.Id);
-        Test.stopTest();
-        
-        // The draft should still be found in test context since we just created it
-        System.assertEquals(1, drafts.size(), 'Should find recent draft');
+        System.assertEquals(false, hasDrafts, 'Should not count sent emails as drafts');
     }
 }

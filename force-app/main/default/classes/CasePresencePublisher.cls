@@ -8,7 +8,7 @@ public with sharing class CasePresencePublisher {
      * @param callType Type of call: 'heartbeat' or 'focus'
      */
     @AuraEnabled
-    public static void publishPresence(String caseId, String state, Boolean hasDraft, String callType) {
+    public static void publishPresence(String caseId, String state, Boolean hasDraft, String callType, Boolean isMobile) {
         try {
             // Get current user's name and photo
             User currentUser = [
@@ -38,7 +38,8 @@ public with sharing class CasePresencePublisher {
                 State__c = state,
                 HasDraft__c = hasDraft,
                 Timestamp__c = DateTime.now(),
-                CallType__c = callType
+                CallType__c = callType,
+                IsMobile__c = (isMobile != null ? isMobile : false)
             );
             
             Database.SaveResult result = EventBus.publish(event);
@@ -73,7 +74,9 @@ public with sharing class CasePresencePublisher {
                    Key_Badge__c,
                    Normal_Users__c,
                    Normal_Badge__c,
-                   Enable_Debug_Logging__c
+                   Enable_Debug_Logging__c,
+                   Draft_Check_Interval_Seconds__c,
+                   Expiration_Check_Interval_Seconds__c
             FROM Case_Presence_Settings__mdt
             WHERE DeveloperName = 'Default'
             LIMIT 1
@@ -96,22 +99,26 @@ public with sharing class CasePresencePublisher {
             result.normalUsers = settings[0].Normal_Users__c != null ? settings[0].Normal_Users__c : '';
             result.normalBadge = settings[0].Normal_Badge__c != null ? settings[0].Normal_Badge__c : '👤';
             result.enableDebugLogging = settings[0].Enable_Debug_Logging__c != null ? settings[0].Enable_Debug_Logging__c : false;
+            result.draftCheckIntervalSeconds = settings[0].Draft_Check_Interval_Seconds__c != null ? settings[0].Draft_Check_Interval_Seconds__c.intValue() : 10;
+            result.expirationCheckIntervalSeconds = settings[0].Expiration_Check_Interval_Seconds__c != null ? settings[0].Expiration_Check_Interval_Seconds__c.intValue() : 10;
         } else {
             // Return defaults
-            result.heartbeatFrequencySeconds = 20;
+            result.heartbeatFrequencySeconds = 240;
             result.presenceExpirationMinutes = 10; // 10 minutes - allows dormant tabs to expire
             result.draftStalenessMinutes = 5;
             result.showJoinToasts = true;
             result.showEditStartToasts = true;
             result.showEditStopToasts = true;
             result.showLeaveToasts = true;
-            result.vipUsers = 'Andy,Zakiyya,Sakshi';
+            result.vipUsers = '';
             result.vipBadge = '👑';
             result.keyUsers = '';
             result.keyBadge = '⭐';
             result.normalUsers = '';
             result.normalBadge = '👤';
             result.enableDebugLogging = false;
+            result.draftCheckIntervalSeconds = 10;
+            result.expirationCheckIntervalSeconds = 10;
         }
         
         return result;
@@ -166,6 +173,8 @@ public with sharing class CasePresencePublisher {
         @AuraEnabled public String normalUsers { get; set; }
         @AuraEnabled public String normalBadge { get; set; }
         @AuraEnabled public Boolean enableDebugLogging { get; set; }
+        @AuraEnabled public Integer draftCheckIntervalSeconds { get; set; }
+        @AuraEnabled public Integer expirationCheckIntervalSeconds { get; set; }
     }
     
     /**

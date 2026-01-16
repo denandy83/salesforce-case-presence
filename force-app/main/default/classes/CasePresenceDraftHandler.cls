@@ -1,33 +1,6 @@
 public with sharing class CasePresenceDraftHandler {
     
     /**
-     * Check if current user has any Chatter drafts
-     * Uses ConnectApi to check user's draft feed
-     * @return True if user has draft(s), false otherwise
-     */
-    @AuraEnabled(cacheable=false)
-    public static Boolean currentUserHasDrafts() {
-        try {
-            // Use ConnectApi to get current user's draft feed
-            ConnectApi.FeedElementPage draftFeed = ConnectApi.ChatterFeeds.getFeedElementsFromFeed(
-                null, // Use current user's context
-                ConnectApi.FeedType.Draft,
-                'me' // Current user's drafts
-            );
-            
-            // Return true if user has any drafts
-            return draftFeed != null && 
-                   draftFeed.elements != null && 
-                   !draftFeed.elements.isEmpty();
-                   
-        } catch (Exception e) {
-            // If error (e.g., Chatter not enabled), assume no drafts
-            System.debug('Error checking drafts: ' + e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
      * Check if current user has draft emails for a specific case
      * @param caseId The Case ID to check
      * @return True if user has draft email(s) for this case

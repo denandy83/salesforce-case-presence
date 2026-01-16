@@ -62,7 +62,23 @@
     height: 12px;
 }
 
-.editing-badge lightning-icon {
+.mobile-badge {
+    position: absolute;
+    bottom: -1px;
+    left: -1px;
+    background: white;
+    border-radius: 50%;
+    padding: 1px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+}
+
+.editing-badge lightning-icon,
+.mobile-badge lightning-icon {
     --slds-c-icon-color-foreground: #0176d3;
     --slds-c-icon-size: 8px;
 }
@@ -163,13 +179,13 @@
 /* Hide tooltips by default */
 .custom-tooltip {
     display: none;
-    position: absolute;
-    z-index: 1000;
+    position: fixed; /* Fixed to break out of overflow/stacking contexts */
+    z-index: 900000; /* Extremely high z-index */
     pointer-events: none;
+    white-space: nowrap;
 }
 
-/* Show tooltip on hover */
-.avatar-wrapper:hover .custom-tooltip {
+/* Show tooltip on hover - handled by JS now for positioning */
+.custom-tooltip.visible {
     display: block;
-    pointer-events: auto;
 }

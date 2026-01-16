@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Heartbeat_Frequency_Seconds__c</fullName>
-    <defaultValue>20</defaultValue>
+    <defaultValue>240</defaultValue>
     <label>Heartbeat Frequency (Seconds)</label>
     <precision>3</precision>
     <required>false</required>

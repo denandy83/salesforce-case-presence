@@ -1,4 +1,4 @@
-public class CasePresenceLogHandler {
+public without sharing class CasePresenceLogHandler {
     
     /**
      * Upsert presence logs - handles matching by Case+User only
@@ -23,14 +23,14 @@ public class CasePresenceLogHandler {
         // Create map for matching
         Map<String, Id> existingLogMap = new Map<String, Id>();
         for (Case_Presence_Log__c existing : existingLogs) {
-            String key = existing.Case_Id__c + '_' + existing.User_Id__c;
+            String key = (existing.Case_Id__c + '_' + existing.User_Id__c).toLowerCase();
             existingLogMap.put(key, existing.Id);
         }
         
         // Update or insert
         List<Case_Presence_Log__c> logsToUpsert = new List<Case_Presence_Log__c>();
         for (Case_Presence_Log__c log : newLogs) {
-            String key = log.Case_Id__c + '_' + log.User_Id__c;
+            String key = (log.Case_Id__c + '_' + log.User_Id__c).toLowerCase();
             if (existingLogMap.containsKey(key)) {
                 log.Id = existingLogMap.get(key);
             }
