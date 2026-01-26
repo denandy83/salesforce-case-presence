@@ -17,6 +17,7 @@
                 <supportedFormFactor type="Large" />
                 <supportedFormFactor type="Small" />
             </supportedFormFactors>
+            <property name="ignoreVisibility" type="Boolean" label="Ignore Component Visibility" description="If true, users remain 'Active' even if the component is scrolled out of view, as long as the tab is focused." default="false"/>
         </targetConfig>
     </targetConfigs>
     <masterLabel>Case Presence Indicator</masterLabel>

@@ -41,6 +41,24 @@ public without sharing class CasePresenceLogHandler {
             upsert logsToUpsert;
         } catch (Exception e) {
             System.debug('Error upserting presence logs: ' + e.getMessage());
+            
+            try {
+                Id relatedCaseId = null;
+                if (!logsToUpsert.isEmpty()) {
+                    // Try to grab the first valid Case ID we can find
+                    relatedCaseId = logsToUpsert[0].Case_Id__c;
+                }
+                
+                Error_Log__c err = new Error_Log__c(
+                    Related_Case__c = relatedCaseId,
+                    Error_Description__c = 'Upsert Failed: ' + e.getMessage() + '\nStack: ' + e.getStackTraceString(),
+                    More_info__c = System.now() + ' - CasePresenceLogHandler',
+                    Problem_Child__c = 'Case Presence'
+                );
+                insert err;
+            } catch (Exception logEx) {
+                System.debug('Failed to create Error Log: ' + logEx.getMessage());
+            }
         }
     }
 }

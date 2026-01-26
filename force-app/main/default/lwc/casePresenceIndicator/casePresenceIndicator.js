@@ -25,6 +25,8 @@ export default class CasePresenceIndicator extends LightningElement {
             this.handleRecordIdChange(value, oldValue);
         }
     }
+
+    @api ignoreVisibility = false;
     
     previousRecordId = null;
     
@@ -73,6 +75,7 @@ export default class CasePresenceIndicator extends LightningElement {
     draftCheckInterval = null;
     expirationCheckInterval = null;
     heartbeatInterval_timer = null;
+    visibilityPollInterval = null;
     
     // Handlers
     visibilityChangeHandler = null;
@@ -130,6 +133,13 @@ export default class CasePresenceIndicator extends LightningElement {
             this.startExpirationFilter();
             this.startVisibilityMonitoring();
             this.setupBeforeUnload();
+            
+            // Start Visibility Poller (Safety net for iframe focus issues, e.g. Email Composer)
+            // If focus is inside an iframe (like CKEditor), the 'blur' event might not bubble to us.
+            // This polling ensures we catch the loss of focus when the user Alt-Tabs.
+            this.visibilityPollInterval = setInterval(() => {
+                this.checkVisibility();
+            }, 2000);
             
         } catch (error) {
             console.error('Error initializing component:', error);
@@ -251,7 +261,7 @@ export default class CasePresenceIndicator extends LightningElement {
             // Normal user or non-grace period logic
             if (existingUserIndex !== -1) {
                 const user = this.visibleUsers[existingUserIndex];
-                if (this.isActive && document.visibilityState === 'visible' && this.settings?.showLeaveToasts) {
+                if (document.visibilityState === 'visible' && this.settings?.showLeaveToasts) {
                     this.showLeaveToast(user.userName);
                 }
                 this.visibleUsers = this.visibleUsers.filter((_, i) => i !== existingUserIndex);
@@ -278,7 +288,7 @@ export default class CasePresenceIndicator extends LightningElement {
                     ...this.visibleUsers.slice(existingUserIndex + 1)
                 ];
                 
-                if (this.isActive && document.visibilityState === 'visible') {
+                if (document.visibilityState === 'visible') {
                     if (!hadDraft && nowHasDraft && this.settings?.showEditStartToasts) {
                         this.showEditingToast(user.userName);
                     } else if (hadDraft && !nowHasDraft && this.settings?.showEditStopToasts) {
@@ -287,7 +297,7 @@ export default class CasePresenceIndicator extends LightningElement {
                 }
             } else {
                 this.visibleUsers = [...this.visibleUsers, user];
-                if (this.isActive && document.visibilityState === 'visible' && this.settings?.showJoinToasts) {
+                if (document.visibilityState === 'visible' && this.settings?.showJoinToasts) {
                     this.showJoinToast(user.userName);
                 }
             }
@@ -297,7 +307,13 @@ export default class CasePresenceIndicator extends LightningElement {
     checkVisibility() {
         const isTabVisible = document.visibilityState === 'visible';
         const isWindowFocused = document.hasFocus();
-        const isComponentVisible = this.isIntersecting;
+        
+        // Check if the component is actually in the active Salesforce workspace tab
+        // If width/height is 0, it's hidden (e.g. user is on a different Salesforce tab)
+        const rect = this.template.host.getBoundingClientRect();
+        const isOnActiveTab = rect.width > 0 || rect.height > 0;
+        
+        const isComponentVisible = this.isIntersecting || (this.ignoreVisibility && isOnActiveTab);
 
         const shouldBeActive = isTabVisible && isWindowFocused && isComponentVisible;
 
@@ -338,11 +354,18 @@ export default class CasePresenceIndicator extends LightningElement {
         if (!this.isActive) return;
         this.log('⚪ Switching to IDLE');
         
-        await this.checkDrafts();
-        
+        // 1. Optimistic Update: Set IDLE immediately to beat the browser freeze
         this.isActive = false;
-        await this.publishStateChange('idle');
         this.stopDraftChecking();
+        
+        // 2. Fire initial 'Idle' signal immediately (don't await)
+        // This ensures the user looks idle even if the subsequent network call gets throttled
+        this.publishStateChange('idle').catch(e => console.error(e));
+        
+        // 3. Perform the final draft check
+        // If this finds a change, checkDrafts will call publishStateChange again
+        // causing a second update: "Idle + Has Draft"
+        await this.checkDrafts();
     }
 
     startDraftChecking() {
@@ -368,13 +391,17 @@ export default class CasePresenceIndicator extends LightningElement {
         try {
             const drafts = await getAllDrafts({ caseId: this.recordId });
             if (!this.isComponentActive) return;
+            
+            this.log('Drafts found:', drafts);
 
             const hasMyDrafts = drafts.some(d => d.userId === this.currentUserId);
+            this.log('Has my drafts?', hasMyDrafts, 'Current User:', this.currentUserId);
 
             const oldHasDrafts = this.hasDrafts;
             this.hasDrafts = hasMyDrafts;
 
             if (oldHasDrafts !== this.hasDrafts) {
+                this.log('Draft status changed, publishing update...');
                 await this.publishStateChange(this.isActive ? 'active' : 'idle');
             }
         } catch (error) {
@@ -583,7 +610,8 @@ export default class CasePresenceIndicator extends LightningElement {
                 firstName: firstName,
                 stateLabel: this.getStateLabel(user),
                 isEditing: user.hasDraft,
-                style: `opacity: ${opacity};`,
+                containerStyle: `opacity: ${opacity};`,
+                photoClass: `avatar-photo ${user.hasDraft ? 'editing' : ''}`,
                 badge: badge,
                 showMobileIcon: user.isMobile
             };

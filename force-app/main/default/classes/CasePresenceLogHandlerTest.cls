@@ -95,4 +95,30 @@ private class CasePresenceLogHandlerTest {
         Integer count = [SELECT COUNT() FROM Case_Presence_Log__c];
         System.assertEquals(1, count, 'Should not create duplicate');
     }
+
+    @isTest
+    static void testUpsertPresenceLogs_ErrorHandling() {
+        Case c = [SELECT Id FROM Case LIMIT 1];
+        String userId = UserInfo.getUserId();
+        
+        // Create a log with a value that is too long for the field to force a DML Exception
+        // Assuming State__c has a max length (e.g., 20 or 255). We will use a huge string.
+        String veryLongString = 'A'.repeat(300); 
+        
+        Case_Presence_Log__c invalidLog = new Case_Presence_Log__c(
+            Case_Id__c = c.Id,
+            User_Id__c = userId,
+            State__c = veryLongString, // This should trigger DML exception
+            Last_Updated__c = System.now()
+        );
+        
+        Test.startTest();
+        // This should catch the exception internally and create an Error_Log__c
+        CasePresenceLogHandler.upsertPresenceLogs(new List<Case_Presence_Log__c>{invalidLog});
+        Test.stopTest();
+        
+        // Verify Error Log was created
+        List<Error_Log__c> errors = [SELECT Id, Problem_Child__c FROM Error_Log__c WHERE Problem_Child__c = 'Case Presence'];
+        System.assert(!errors.isEmpty(), 'An Error_Log__c record should have been created on failure');
+    }
 }

@@ -15,12 +15,12 @@
                              data-userid={user.userId}
                              onmouseenter={handleAvatarHover}
                              onmouseleave={handleAvatarLeave}>
-                            <div class="avatar-container">
+                            <div class="avatar-container" style={user.containerStyle}>
                                 <!-- Badge for categorized users -->
                                 <template if:true={user.badge}>
                                     <div class="user-badge">{user.badge}</div>
                                 </template>
-                                <div class="avatar-photo" style={user.style}>
+                                <div class={user.photoClass}>
                                     <lightning-avatar
                                         src={user.userPhotoUrl}
                                         fallback-icon-name="standard:user"

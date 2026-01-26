@@ -45,16 +45,44 @@ public with sharing class CasePresencePublisher {
             Database.SaveResult result = EventBus.publish(event);
             
             if (!result.isSuccess()) {
+                String errorMsg = '';
                 for (Database.Error error : result.getErrors()) {
+                    errorMsg += error.getMessage() + '; ';
                     System.debug('Error publishing presence event: ' + error.getMessage());
+                }
+                
+                try {
+                    Error_Log__c err = new Error_Log__c(
+                        Related_Case__c = caseId,
+                        Error_Description__c = 'EventBus Publish Failed: ' + errorMsg,
+                        More_info__c = System.now() + ' - CasePresencePublisher',
+                        Problem_Child__c = 'Case Presence'
+                    );
+                    insert err;
+                } catch (Exception logEx) {
+                    System.debug('Failed to log error: ' + logEx.getMessage());
                 }
             }
             
         } catch (Exception e) {
+            try {
+                Error_Log__c err = new Error_Log__c(
+                    Related_Case__c = caseId,
+                    Error_Description__c = 'Exception in publishPresence: ' + e.getMessage() + '\nStack: ' + e.getStackTraceString(),
+                    More_info__c = System.now() + ' - CasePresencePublisher',
+                    Problem_Child__c = 'Case Presence'
+                );
+                insert err;
+            } catch (Exception logEx) {
+                System.debug('Failed to log error: ' + logEx.getMessage());
+            }
             throw new AuraHandledException('Error publishing presence: ' + e.getMessage());
         }
     }
     
+    @TestVisible
+    private static String SETTINGS_DEV_NAME = 'Default';
+
     /**
      * Get settings from Custom Metadata
      */
@@ -78,7 +106,7 @@ public with sharing class CasePresencePublisher {
                    Draft_Check_Interval_Seconds__c,
                    Expiration_Check_Interval_Seconds__c
             FROM Case_Presence_Settings__mdt
-            WHERE DeveloperName = 'Default'
+            WHERE DeveloperName = :SETTINGS_DEV_NAME
             LIMIT 1
         ];
         

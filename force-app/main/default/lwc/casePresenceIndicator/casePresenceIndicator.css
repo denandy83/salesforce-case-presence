@@ -45,6 +45,28 @@
     padding: 2px;
     display: inline-block;
     position: relative;
+    border: 1px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+.avatar-photo.editing {
+    border: 1px solid #00008b;
+    animation: pulseBlue 2s infinite;
+}
+
+@keyframes pulseBlue {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 0, 139, 0.7);
+        border-color: rgba(0, 0, 139, 1);
+    }
+    70% {
+        box-shadow: 0 0 0 5px rgba(0, 0, 139, 0);
+        border-color: rgba(0, 0, 139, 0.5);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 0, 139, 0);
+        border-color: rgba(0, 0, 139, 1);
+    }
 }
 
 .editing-badge {
@@ -58,8 +80,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 12px;
-    height: 12px;
+    width: 1px;
+    height: 1px;
 }
 
 .mobile-badge {
@@ -106,29 +128,6 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-}
-
-/* Active state - 100% opacity, no border */
-.presence-avatar.active {
-    opacity: 1;
-}
-
-.presence-avatar.active .avatar-photo {
-    border: 2px solid transparent;
-}
-
-/* Idle state - 50% opacity, no border */
-.presence-avatar.idle {
-    opacity: 0.5;
-}
-
-.presence-avatar.idle .avatar-photo {
-    border: 2px solid transparent;
-}
-
-/* Drafting state styling (for both active and idle) */
-.presence-avatar.drafting .avatar-photo {
-    border: 2px solid #0176d3;
 }
 
 .user-list-item {
